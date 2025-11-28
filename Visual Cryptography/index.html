@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Visual Crypto AR Demo</title>
+<style>
+body { margin:0; font-family: sans-serif; background:#111; color:#ddd }
+#wrap { position:relative; width:100vw; height:100vh; overflow:hidden }
+video, canvas { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover }
+#overlayImg { position:absolute; transform-origin: center center; pointer-events:none; }
+#info { position:absolute; left:10px; top:10px; background:rgba(0,0,0,0.4); padding:8px; border-radius:6px }
+</style>
+</head>
+
+<body>
+<div id="wrap">
+  <video id="video" autoplay playsinline></video>
+  <canvas id="camCanvas"></canvas>
+  <img id="overlayImg" src="out/share2.png" style="display:none" />
+  <div id="info">Point at the printed share (with QR in the corner)</div>
+</div>
+
+<!-- jsQR -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+
+<script>
+const video = document.getElementById('video');
+const camCanvas = document.getElementById('camCanvas');
+const ctx = camCanvas.getContext('2d');
+const overlay = document.getElementById('overlayImg');
+
+async function startCamera(){
+  try{
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:'environment'},
+      audio:false
+    });
+    video.srcObject = stream;
+    await video.play();
+    camCanvas.width = video.videoWidth;
+    camCanvas.height = video.videoHeight;
+    overlay.style.display = 'block';
+    requestAnimationFrame(tick);
+  }catch(e){
+    alert("Camera error: " + e.message);
+  }
+}
+
+function tick(){
+  if(video.readyState === video.HAVE_ENOUGH_DATA){
+    camCanvas.width = video.videoWidth;
+    camCanvas.height = video.videoHeight;
+    ctx.drawImage(video, 0, 0, camCanvas.width, camCanvas.height);
+
+    const frame = ctx.getImageData(0,0,camCanvas.width,camCanvas.height);
+    const qr = jsQR(frame.data, frame.width, frame.height, {
+      inversionAttempts: 'attemptBoth'
+    });
+
+    if(qr){
+      const tl = qr.location.topLeftCorner;
+      const tr = qr.location.topRightCorner;
+      const bl = qr.location.bottomLeftCorner;
+      const br = qr.location.bottomRightCorner;
+
+      const cx = (tl.x + tr.x + bl.x + br.x)/4;
+      const cy = (tl.y + tr.y + bl.y + br.y)/4;
+
+      const dx = tr.x - tl.x;
+      const dy = tr.y - tl.y;
+      const angle = Math.atan2(dy, dx);
+
+      const qrPixelWidth = Math.hypot(dx, dy);
+      const expectedQRsize = 80;
+      const scale = qrPixelWidth / expectedQRsize;
+
+      const shareSize = 500;
+      const qrSize = expectedQRsize;
+      const margin = 10;
+
+      const qr_cx_share = (shareSize - margin - qrSize/2);
+      const qr_cy_share = (shareSize - margin - qrSize/2);
+      const center_share = shareSize / 2;
+
+      const vx = center_share - qr_cx_share;
+      const vy = center_share - qr_cy_share;
+
+      const vx_rot = vx * Math.cos(angle) - vy * Math.sin(angle);
+      const vy_rot = vx * Math.sin(angle) + vy * Math.cos(angle);
+
+      const finalX = cx + vx_rot * scale;
+      const finalY = cy + vy_rot * scale;
+
+      overlay.style.width  = (shareSize * scale) + "px";
+      overlay.style.height = (shareSize * scale) + "px";
+      overlay.style.left   = (finalX - (shareSize*scale)/2) + "px";
+      overlay.style.top    = (finalY - (shareSize*scale)/2) + "px";
+      overlay.style.transform = `rotate(${angle}rad)`;
+    }
+  }
+
+  requestAnimationFrame(tick);
+}
+
+startCamera();
+</script>
+</body>
+</html>
